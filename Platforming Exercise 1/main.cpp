@@ -30,6 +30,7 @@
 #include <SFML/Audio.hpp>
 #include <SFML/Window/Keyboard.hpp>
 #include <iostream>
+#include <fstream>
 #include <list>
 
 using namespace std;
