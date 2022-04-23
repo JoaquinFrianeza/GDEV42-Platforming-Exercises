@@ -1,0 +1,13 @@
+H_ACCEL     10
+H_COEFF     0.3
+H_OPPOSITE  2.0
+H_AIR       1.0
+MIN_H_VEL   0.01
+MAX_H_VEL    200
+GRAVITY        20
+V_ACCEL        -600
+V_HOLD        1
+V_SAFE        6
+CUT_V_VEL    -20
+MAX_V_VEL    400
+GAP  0.001
