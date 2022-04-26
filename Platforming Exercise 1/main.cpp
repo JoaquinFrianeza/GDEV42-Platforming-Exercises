@@ -32,15 +32,67 @@
 #include <iostream>
 #include <fstream>
 #include <list>
-
+#include<string>
+#include<vector>
 using namespace std;
 using namespace sf;
-
+vector<float> propertyList;
 
 int main()
 {
-		
-		RenderWindow window(sf::VideoMode(800, 800), "Audio 2");
+
+	string filename("properties.txt");
+	float number;
+
+	ifstream input_file(filename);
+	if (!input_file.is_open()) {
+		cerr << "Could not open the file - '"
+			<< filename << "'" << endl;
+		return EXIT_FAILURE;
+	}
+	
+	while (input_file >> number) {
+		propertyList.push_back(number);
+	}
+	float H_ACCEL = propertyList[0];
+	float H_COEFF = propertyList[1];
+	float H_OPPOSITE= propertyList[2];
+	float H_AIR = propertyList[3];
+	float MIN_H_VEL=propertyList[4];;
+	float MAX_H_VEL = propertyList[5];
+	float GRAVITY = propertyList[6];
+	float V_ACCEL = propertyList[7];
+	float V_HOLD = propertyList[8];
+	float V_SAFE = propertyList[9];
+	float CUT_V_VEL = propertyList[10];
+	float MAX_V_VEL = propertyList[11];
+	float GAP = propertyList[12];
+
+	ifstream file;
+	file.open("stage.txt");
+
+	float playerX = 0;
+	float playerY = 0;
+	file >> playerX;
+	file >> playerY;
+	RectangleShape playerCharacter(Vector2f(24,32));
+	playerCharacter.setFillColor(Color::Cyan);
+	playerCharacter.setPosition(playerX, playerY);
+
+	float shapeCount;
+	file >> shapeCount;
+	
+	vector<RectangleShape> walls;
+	
+	for (int i = 0; i < shapeCount; i++) {
+		float  Wx, Wy, Wwidth, Wheight;
+		file >> Wx >> Wy >> Wwidth >> Wheight;
+		sf::RectangleShape tempShape(Vector2f(Wwidth,Wheight));
+		tempShape.setPosition(Wx, Wy);
+		tempShape.setFillColor(Color::White);
+		walls.push_back(tempShape);
+	}
+		RenderWindow window(sf::VideoMode(800, 800), "Platforming 1");
 		window.setFramerateLimit(60);
 		window.setKeyRepeatEnabled(false);
 
@@ -55,13 +107,18 @@ int main()
 
 	
 			window.clear();
+			window.draw(playerCharacter);
+			for (int i = 0; i < walls.size(); i++) {
+				window.draw(walls[i]);
+			}
 			window.display();
 
 		
 		}
+		input_file.close();
+		return EXIT_SUCCESS;
 		return 0;
 	}
-
 
 
 
