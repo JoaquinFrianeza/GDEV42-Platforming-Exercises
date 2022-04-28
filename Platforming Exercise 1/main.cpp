@@ -38,6 +38,31 @@ using namespace std;
 using namespace sf;
 vector<float> propertyList;
 
+/**
+ * Gets the magnitude of the specified vector
+ */
+float magnitude(const sf::Vector2f& v)
+{
+	float magnitude = sqrt(v.x * v.x + v.y * v.y);
+	return magnitude;
+}
+
+/**
+ * Normalizes the provided vector so that
+ * the vector has a magnitude of 1.
+ */
+sf::Vector2f normalize(const sf::Vector2f& v)
+{
+	sf::Vector2f ret = v;
+	float mag = magnitude(v);
+	if (mag > 0.0f)
+	{
+		ret /= mag;
+	}
+	return ret;
+}
+
+
 int main()
 {
 
@@ -53,6 +78,9 @@ int main()
 	
 	while (input_file >> number) {
 		propertyList.push_back(number);
+	}
+	for (int i = 0; i < propertyList.size(); i++) {
+		cout << propertyList[i] << endl;
 	}
 	float H_ACCEL = propertyList[0];
 	float H_COEFF = propertyList[1];
@@ -79,10 +107,16 @@ int main()
 	playerCharacter.setFillColor(Color::Cyan);
 	playerCharacter.setPosition(playerX, playerY);
 
+	Vector2f playerVel(0,0), playerAccel(0,0);
+
 	float shapeCount;
 	file >> shapeCount;
 	
 	vector<RectangleShape> walls;
+
+	// Setup clock for calculating delta time
+	sf::Clock deltaTimeClock;
+	float accumulator = 0.0f;
 	
 	for (int i = 0; i < shapeCount; i++) {
 		float  Wx, Wy, Wwidth, Wheight;
@@ -92,33 +126,132 @@ int main()
 		tempShape.setFillColor(Color::White);
 		walls.push_back(tempShape);
 	}
-		RenderWindow window(sf::VideoMode(800, 800), "Platforming 1");
-		window.setFramerateLimit(60);
-		window.setKeyRepeatEnabled(false);
+	RenderWindow window(sf::VideoMode(800, 800), "Platforming 1");
+	window.setFramerateLimit(60);
+	window.setKeyRepeatEnabled(false);
+	float TIMESTEP = 1.0f / 60;
+	Vector2f forceDir(0, 0);
 
-		while (window.isOpen())
+	float frameCounter = 0;
+
+	bool keyRight = false, keyLeft = false, keyJump = false, keyStillPressed = false;
+	while (window.isOpen())
+	{
+		// Obtain the delta time
+		sf::Time deltaTime = deltaTimeClock.restart();
+		// Add the delta time to our accumulator
+		accumulator += deltaTime.asSeconds();
+
+		Event event;
+		while (window.pollEvent(event))
 		{
-			Event event;
-			while (window.pollEvent(event))
-			{
-				if (event.type == sf::Event::Closed)
-					window.close();
+			if (event.type == sf::Event::Closed)
+				window.close();
+			else if (event.type == Event::KeyPressed) {
+				if (event.key.code == Keyboard::Key::W) {
+					forceDir.y = V_ACCEL;
+					keyJump = true;
+
+				}
+				if (event.key.code == Keyboard::Key::A) {
+					keyLeft = true;
+					keyStillPressed = true;
+					forceDir.x = -15;
+
+				}
+				else if (event.key.code == Keyboard::Key::D) {
+					keyRight = true;
+					keyStillPressed = true;
+					forceDir.x = 15;
+
+				}
+			}
+			else if (event.type == Event::KeyReleased) {
+				if (event.key.code == Keyboard::Key::A) {
+					keyLeft = false;
+					if (!keyRight && !keyLeft) {
+						forceDir.x = 0;
+						keyStillPressed = false;
+					}
+				}
+				else if (event.key.code == Keyboard::Key::D) {
+					keyRight = false;
+					if (!keyLeft && !keyRight) {
+						forceDir.x = 0;
+						keyStillPressed = false;
+					}
+				}
+				else if (event.key.code == Keyboard::Key::W) {
+					forceDir.y = 0;
+					keyJump = false;
+					frameCounter = 0;
+				}
+			}
+		}
+
+
+		while (accumulator >= TIMESTEP) {
+			accumulator -= TIMESTEP;
+
+			Vector2f currentPosition = playerCharacter.getPosition();
+			Vector2f currentVelocity = playerVel;
+			Vector2f currentAcceleration = playerAccel;
+
+			currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP;
+			if (keyJump) {
+				if (frameCounter < V_HOLD) {
+					currentAcceleration.y += V_ACCEL;
+				}
+				else {
+					keyJump = false;
+				}
+				frameCounter += 1;
+
+			}
+			else {
+				currentAcceleration.y += GRAVITY;
 			}
 
-	
-			window.clear();
-			window.draw(playerCharacter);
-			for (int i = 0; i < walls.size(); i++) {
-				window.draw(walls[i]);
+			Vector2f playerNextPos = currentPosition + currentVelocity * TIMESTEP;
+			
+			cout << currentVelocity.x << endl;
+
+				playerVel = currentAcceleration + currentVelocity;
+				if (playerVel.x > MAX_H_VEL) {
+					playerVel.x = 200;
+				}
+				else if (playerVel.x < -MAX_H_VEL) {
+					playerVel.x = -200;
+				}
+				if (playerVel.y > MAX_V_VEL) {
+					playerVel.y = 400;
+				}
+			if(!keyStillPressed) {
+				playerAccel = Vector2f(0, 0);
+				playerVel.x *= H_COEFF;
+				if (playerVel.x < 0.001) {
+					playerVel.x = 0;
+				}
+
 			}
-			window.display();
+
+			playerCharacter.setPosition(playerNextPos);
+			
+		}
+	
+		window.clear();
+		window.draw(playerCharacter);
+		for (int i = 0; i < walls.size(); i++) {
+			window.draw(walls[i]);
+		}
+		window.display();
 
 		
-		}
-		input_file.close();
-		return EXIT_SUCCESS;
-		return 0;
 	}
+	input_file.close();
+	return EXIT_SUCCESS;
+	return 0;
+}
 
 
 
