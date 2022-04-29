@@ -62,6 +62,9 @@ sf::Vector2f normalize(const sf::Vector2f& v)
 	return ret;
 }
 
+bool isGrounded(RectangleShape a, RectangleShape b) {
+	return false;
+}
 
 int main()
 {
@@ -184,7 +187,6 @@ int main()
 				else if (event.key.code == Keyboard::Key::W) {
 					forceDir.y = 0;
 					keyJump = false;
-					frameCounter = 0;
 				}
 			}
 		}
@@ -213,21 +215,37 @@ int main()
 			}
 
 			Vector2f playerNextPos = currentPosition + currentVelocity * TIMESTEP;
-			
-			cout << currentVelocity.x << endl;
+			for (int i = 0; i < walls.size(); i++) {
+				//collission checks
+				if (walls[i].getGlobalBounds().intersects(playerCharacter.getGlobalBounds())) {
+					//horizontal checks
+					
+					//vertical checks
+					if (currentVelocity.y < 0 && playerNextPos.y < walls[i].getPosition().y + walls[i].getSize().y) {
+						playerNextPos.y = walls[i].getPosition().y + walls[i].getSize().y + GAP;
+						currentVelocity.y = 0;
+						currentAcceleration.y = GRAVITY;
+					}
+					else if (currentVelocity.y > 0 && playerNextPos.y + playerCharacter.getSize().y > walls[i].getPosition().y) {
+						playerNextPos.y = walls[i].getPosition().y - playerCharacter.getSize().y - GAP;
+						currentVelocity.y = 0;
+						currentAcceleration.y = 0;
+						frameCounter = 0;
+					}
+				}
+			}
 
-				playerVel = currentAcceleration + currentVelocity;
-				if (playerVel.x > MAX_H_VEL) {
-					playerVel.x = 200;
-				}
-				else if (playerVel.x < -MAX_H_VEL) {
-					playerVel.x = -200;
-				}
-				if (playerVel.y > MAX_V_VEL) {
-					playerVel.y = 400;
-				}
+			playerVel = currentAcceleration + currentVelocity;
+			if (playerVel.x > MAX_H_VEL) {
+				playerVel.x = 200;
+			}
+			else if (playerVel.x < -MAX_H_VEL) {
+				playerVel.x = -200;
+			}
+			if (playerVel.y > MAX_V_VEL) {
+				playerVel.y = 400;
+			}
 			if(!keyStillPressed) {
-				playerAccel = Vector2f(0, 0);
 				playerVel.x *= H_COEFF;
 				if (playerVel.x < 0.001) {
 					playerVel.x = 0;
