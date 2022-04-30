@@ -137,9 +137,10 @@ int main()
 	float TIMESTEP = 1.0f / 60;
 	Vector2f forceDir(0, 0);
 
-	float frameCounter = 0;
+	float frameCounter = 0, jumpCounter = 0;
 
-	bool keyRight = false, keyLeft = false, keyJump = false, keyStillPressed = false;
+	bool keyRight = false, keyLeft = false, keyJump = false, keyStillPressed = false, jumpRel = false;
+	bool goingRight = false; bool goingLeft = false;
 	while (window.isOpen())
 	{
 		// Obtain the delta time
@@ -189,6 +190,8 @@ int main()
 				else if (event.key.code == Keyboard::Key::W) {
 					forceDir.y = 0;
 					keyJump = false;
+					jumpRel = true;
+					landed = true;
 				}
 			}
 		}
@@ -200,43 +203,83 @@ int main()
 			Vector2f currentPosition = playerCharacter.getPosition();
 			Vector2f currentVelocity = playerVel;
 			Vector2f currentAcceleration = playerAccel;
-
-			currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP;
 			if (keyJump) {
-				if (frameCounter < V_HOLD) {
-					currentAcceleration.y += V_ACCEL;
-				}
-				else {
-					keyJump = false;
-				}
-				frameCounter += 1;
-
+				currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP * H_AIR;
 			}
 			else {
-				currentAcceleration.y += GRAVITY;
+				currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP * H_AIR;
+			}
+			if (currentVelocity.x > 0) {
+				goingRight = true;
+				goingLeft = false;
+			}
+			else if(currentVelocity.x < 0){
+				goingRight = false;
+				goingLeft = true;
+			}
+			if (goingLeft && currentAcceleration.x > 0) {
+				currentAcceleration.x = currentAcceleration.x * H_OPPOSITE;
+			}
+			else if (goingRight && currentAcceleration.x < 0) {
+				currentAcceleration.x = currentAcceleration.x * H_OPPOSITE;
 			}
 
 			Vector2f playerNextPos = currentPosition + currentVelocity * TIMESTEP;
 			for (int i = 0; i < walls.size(); i++) {
 				//collission checks
-				if (walls[i].getGlobalBounds().intersects(playerCharacter.getGlobalBounds())) {
-					//horizontal checks
-
+				FloatRect area;
+				if (playerCharacter.getGlobalBounds().intersects(walls[i].getGlobalBounds(), area)) {
+					frameCounter = 0;
+					jumpCounter = 0;
 					//vertical checks
-					if (currentVelocity.y < 0 && playerNextPos.y < walls[i].getPosition().y + walls[i].getSize().y) {
-						playerNextPos.y = walls[i].getPosition().y + walls[i].getSize().y + GAP;
-						currentVelocity.y = 0;
-						currentAcceleration.y = GRAVITY;
+					if (area.width > area.height) {
+						if (area.contains(area.left, playerCharacter.getPosition().y - playerCharacter.getSize().y/2)) {
+							playerNextPos.y = playerCharacter.getPosition().y + area.height + GAP;
+							currentVelocity.y = 0;
+							currentAcceleration.y = GRAVITY;
+						}
+						else {
+							playerNextPos.y = playerCharacter.getPosition().y - area.height - GAP;
+							currentVelocity.y = 0;
+							currentAcceleration.y = 0;
+						}
 					}
-					else if (currentVelocity.y > 0 && playerNextPos.y + playerCharacter.getSize().y > walls[i].getPosition().y) {
-						playerNextPos.y = walls[i].getPosition().y - playerCharacter.getSize().y - GAP;
-						currentVelocity.y = 0;
-						currentAcceleration.y = 0;
-						frameCounter = 0;
+					else if (area.width < area.height) {
+						if (area.contains( playerCharacter.getPosition().x + playerCharacter.getSize().x/2 - .1f, area.top + 1.0f ))
+						{
+							//Right side crash
+							playerNextPos.x = playerCharacter.getPosition().x - area.width - GAP;
+							currentVelocity.x = 0;
+							currentAcceleration.x = 0;
+						}
+						else
+						{
+							//Left side crash
+							playerNextPos.x = playerCharacter.getPosition().x + area.width + GAP;
+							currentVelocity.x = 0;
+							currentAcceleration.x = 0;
+						}
 					}
 				}
 			}
-
+			if (keyJump) {
+				if (frameCounter < V_SAFE) {
+					if (jumpCounter < V_HOLD) {
+						currentAcceleration.y += V_ACCEL;
+					}
+					else {
+						keyJump = false;
+					}
+				}
+				jumpCounter += 1;
+			}
+			else {
+				currentAcceleration.y += GRAVITY;
+				if (jumpRel && !landed) {
+					jumpRel = false;
+					currentVelocity.y += CUT_V_VEL;
+				}
+			}
 			playerVel = currentAcceleration + currentVelocity;
 			if (playerVel.x > MAX_H_VEL) {
 				playerVel.x = 200;
@@ -248,14 +291,14 @@ int main()
 				playerVel.y = 400;
 			}
 			if (!keyStillPressed) {
-				playerVel.x *= H_COEFF;
-				if (playerVel.x < 0.001) {
+				playerVel.x *= H_COEFF * TIMESTEP;
+				if (playerVel.x < MIN_H_VEL) {
 					playerVel.x = 0;
 				}
 
 			}
-
 			playerCharacter.setPosition(playerNextPos);
+			frameCounter += 1;
 
 		}
 
