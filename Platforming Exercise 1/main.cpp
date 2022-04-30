@@ -94,11 +94,11 @@ int main()
 	float GRAVITY = propertyList[6];
 	float V_ACCEL = propertyList[7];
 	float V_HOLD = propertyList[8];
+	
 	float V_SAFE = propertyList[9];
 	float CUT_V_VEL = propertyList[10];
 	float MAX_V_VEL = propertyList[11];
 	float GAP = propertyList[12];
-
 	ifstream file;
 	file.open("stage.txt");
 
@@ -140,7 +140,7 @@ int main()
 	float frameCounter = 0, jumpCounter = 0;
 
 	bool keyRight = false, keyLeft = false, keyJump = false, keyStillPressed = false, jumpRel = false;
-	bool goingRight = false; bool goingLeft = false;
+	bool goingRight = false, goingLeft = false, grounded = false, leftGround = false, reset = false;
 	while (window.isOpen())
 	{
 		// Obtain the delta time
@@ -156,7 +156,9 @@ int main()
 			else if (event.type == Event::KeyPressed) {
 				if (event.key.code == Keyboard::Key::W) {
 					forceDir.y = V_ACCEL;
-					keyJump = true;
+					if (frameCounter < V_SAFE) {
+						keyJump = true;
+					}
 
 				}
 				if (event.key.code == Keyboard::Key::A) {
@@ -191,7 +193,6 @@ int main()
 					forceDir.y = 0;
 					keyJump = false;
 					jumpRel = true;
-					landed = true;
 				}
 			}
 		}
@@ -203,11 +204,12 @@ int main()
 			Vector2f currentPosition = playerCharacter.getPosition();
 			Vector2f currentVelocity = playerVel;
 			Vector2f currentAcceleration = playerAccel;
+
 			if (keyJump) {
-				currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP * H_AIR;
+				currentAcceleration.x = forceDir.x * H_ACCEL * H_AIR;
 			}
 			else {
-				currentAcceleration.x = forceDir.x * H_ACCEL * TIMESTEP * H_AIR;
+				currentAcceleration.x = forceDir.x * H_ACCEL;
 			}
 			if (currentVelocity.x > 0) {
 				goingRight = true;
@@ -229,19 +231,29 @@ int main()
 				//collission checks
 				FloatRect area;
 				if (playerCharacter.getGlobalBounds().intersects(walls[i].getGlobalBounds(), area)) {
-					frameCounter = 0;
-					jumpCounter = 0;
+					leftGround = false;
+					reset = false;
 					//vertical checks
 					if (area.width > area.height) {
 						if (area.contains(area.left, playerCharacter.getPosition().y - playerCharacter.getSize().y/2)) {
 							playerNextPos.y = playerCharacter.getPosition().y + area.height + GAP;
-							currentVelocity.y = 0;
-							currentAcceleration.y = GRAVITY;
+							currentVelocity.y = GRAVITY;
+							frameCounter = 0;
+							jumpCounter = 0;
 						}
 						else {
 							playerNextPos.y = playerCharacter.getPosition().y - area.height - GAP;
-							currentVelocity.y = 0;
-							currentAcceleration.y = 0;
+							if (!keyJump) {
+								if (currentVelocity.y <= 0) {
+									currentVelocity.y += GRAVITY;
+								}
+								else {
+									currentVelocity.y = 0;
+								}
+							}
+							grounded = true;
+							frameCounter = 0;
+							jumpCounter = 0;
 						}
 					}
 					else if (area.width < area.height) {
@@ -261,34 +273,58 @@ int main()
 						}
 					}
 				}
+				else {
+					leftGround = true;
+				}
 			}
 			if (keyJump) {
-				if (frameCounter < V_SAFE) {
-					if (jumpCounter < V_HOLD) {
-						currentAcceleration.y += V_ACCEL;
-					}
-					else {
+				if (leftGround && !reset) {
+					reset = true;
+					currentAcceleration.y = 0;
+				}
+				if (jumpCounter < V_HOLD) {
+					currentAcceleration.y += V_ACCEL * TIMESTEP;
+					currentAcceleration.y += GRAVITY * TIMESTEP;
+					if (jumpCounter == V_HOLD) {
 						keyJump = false;
 					}
 				}
+				else {
+					keyJump = false;
+					currentAcceleration.y += GRAVITY * TIMESTEP;
+						if (currentVelocity.y > CUT_V_VEL) {
+							jumpRel = false;
+							currentVelocity.y += CUT_V_VEL;
+							grounded = false;
+						}
+				}
 				jumpCounter += 1;
+
 			}
 			else {
-				currentAcceleration.y += GRAVITY;
-				if (jumpRel && !landed) {
-					jumpRel = false;
-					currentVelocity.y += CUT_V_VEL;
+				if (currentAcceleration.y < GRAVITY) {
+					currentAcceleration.y += GRAVITY * TIMESTEP;
+				}
+				if (jumpRel && grounded) {
+					if (currentVelocity.y > CUT_V_VEL) {
+						jumpRel = false;
+						currentVelocity.y += CUT_V_VEL;
+						grounded = false;
+					}
+						
 				}
 			}
+			playerAccel = currentAcceleration;
 			playerVel = currentAcceleration + currentVelocity;
+			cout << currentAcceleration.y << endl;
 			if (playerVel.x > MAX_H_VEL) {
-				playerVel.x = 200;
+				playerVel.x = MAX_H_VEL;
 			}
 			else if (playerVel.x < -MAX_H_VEL) {
-				playerVel.x = -200;
+				playerVel.x = -MAX_H_VEL;
 			}
 			if (playerVel.y > MAX_V_VEL) {
-				playerVel.y = 400;
+				playerVel.y = MAX_V_VEL;
 			}
 			if (!keyStillPressed) {
 				playerVel.x *= H_COEFF * TIMESTEP;
