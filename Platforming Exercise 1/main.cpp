@@ -34,41 +34,312 @@
 #include <list>
 #include<string>
 #include<vector>
+
+#define KEY_LEFT	sf::Keyboard::A
+#define KEY_RIGHT	sf::Keyboard::D
+#define KEY_JUMP	sf::Keyboard::W
+#define SCREEN_W	800
+#define SCREEN_H	600
+#define FPS			60.0f
+#define PLAYER_W	24
+#define PLAYER_H	32
+
 using namespace std;
 using namespace sf;
 vector<float> propertyList;
 
-/**
- * Gets the magnitude of the specified vector
- */
-float magnitude(const sf::Vector2f& v)
-{
-	float magnitude = sqrt(v.x * v.x + v.y * v.y);
-	return magnitude;
-}
+float H_ACCEL; // affected by FPS
+float H_COEFF;
+float H_OPPOSITE;
+float H_AIR;
+float MIN_H_VEL;
+float MAX_H_VEL; // affected by FPS
+float GRAVITY; // affected by FPS
+float V_ACCEL; // affected by FPS
+float V_HOLD;
+float V_SAFE;
+float CUT_V_VEL; // affected by FPS
+float MAX_V_VEL; // affected by FPS
+float GAP;
+
+float GLOBALh_accel;
+float GLOBALmax_h_vel;
+float GLOBALgravity;
+float GLOBALv_accel;
+float GLOBALcut_v_vel;
+float GLOBALmax_v_vel;
+
 
 /**
- * Normalizes the provided vector so that
- * the vector has a magnitude of 1.
+ * Class representing any rectangular entity.
  */
-sf::Vector2f normalize(const sf::Vector2f& v)
+class RectEntity
 {
-	sf::Vector2f ret = v;
-	float mag = magnitude(v);
-	if (mag > 0.0f)
+public:
+	// Underlying SFML rectangle shape
+	sf::RectangleShape rect;
+
+	/**
+	 * @brief Draws this rectangular entity
+	 * @param[in] window Window where this entity will be drawn
+	 */
+	void draw(sf::RenderWindow& window)
 	{
-		ret /= mag;
+		window.draw(rect);
 	}
-	return ret;
-}
 
-bool isGrounded(RectangleShape a, RectangleShape b) {
-	return false;
-}
+	/**
+	 * @brief Sets the size of this rectangular entity
+	 * @param[in] width Width
+	 * @param[in] height Height
+	 */
+	void setSize(int width, int height)
+	{
+		rect.setSize(sf::Vector2f(width, height));
+
+		// RectangleShape's origin is the upper-left (0, 0) by default.
+		// We want the origin to be the center of the rectangle.
+		// width >> 1 and height >> 1 can be interchanged with width / 2 and height / 2 respectively.
+		rect.setOrigin(width >> 1, height >> 1);
+	}
+
+	/**
+	 * @brief Sets the color of this entity
+	 * @param color Color
+	 */
+	void setColor(sf::Color color)
+	{
+		rect.setFillColor(color);
+	}
+
+	/**
+	 * @brief Sets the position of this entity.
+	 * @param[in] x X-position
+	 * @param[in] y Y-position
+	 * @note This entity's origin is at the center, not the upper-left corner.
+	 */
+	void setPosition(float x, float y)
+	{
+		rect.setPosition(x, y);
+	}
+
+	/**
+	 * Checks whether this rectangle entity intersects with another rectangle entity
+	 * @param[in] other Other rectnagle entity to check collision with
+	 * @return True if this entity intersects with the other rect entity.
+	 */
+	bool aabbIntersect(RectEntity other)
+	{
+		// Center-radius AABB overlap check.
+		// Refer to the Bounding Boxes slide set from GDEV41
+		sf::RectangleShape o = other.rect;
+		sf::Vector2f dist = rect.getPosition() - o.getPosition();
+		sf::Vector2f check = (rect.getSize() + o.getSize()) * 0.5f;
+		return fabs(dist.x) <= check.x && fabs(dist.y) <= check.y;
+	}
+};
+
+/**
+ * Class representing the player entity
+ */
+class PlayerEntity : public RectEntity
+{
+public:
+	int canJumpNumFrames;   // number of frames remaining after leaving the ground before we can't jump anymore
+	int jumpNumFrames;  // number of frames remaining until we don't apply jump acceleration anymore
+	float hAccel;   // current horizontal acceleration
+	float vAccel;   // current vertical acceleration
+	float hVel;     // current horizontal velocity
+	float vVel;     // current vertical velocity
+
+	/**
+	 * @brief Constructor
+	 */
+	PlayerEntity()
+	{
+		// assume player is grounded at the beginning, hence the initialized values
+		canJumpNumFrames = V_SAFE;
+		jumpNumFrames = V_HOLD;
+		hAccel = vAccel = hVel = vVel = 0;
+	}
+
+	/**
+	 * @brief Process horizontal movement
+	 */
+	void hMove()
+	{
+		
+		bool hIdle = true; // flag indicating whether there is input (FALSE) or not (TRUE)
+		float newAccel = 0; // new acceleration value
+
+		if (sf::Keyboard::isKeyPressed(KEY_LEFT))
+		{
+
+			hIdle = false; // there is input, so we're not idle
+
+			newAccel = -GLOBALh_accel;
+			if (hVel > 0)
+			{ // input is opposite direction of current velocity
+				newAccel *= H_OPPOSITE;
+			}
+		}
+		if (sf::Keyboard::isKeyPressed(KEY_RIGHT))
+		{
+			hIdle = false; // there is input, so we're not idle
+
+			newAccel = GLOBALh_accel;
+			if (hVel < 0)
+			{ // input is opposite direction of current velocity
+				newAccel *= H_OPPOSITE;
+			}
+		}
+
+		if (jumpNumFrames > 0)
+		{ // character not grounded, so apply in-air acceleration adjustment
+			newAccel *= H_AIR;
+		}
+
+		if (hIdle)
+		{ // if we're idle, replace acceleration with factor of current velocity in the opposite direction
+			newAccel = -hVel * H_COEFF;
+		}
+
+		// apply acceleration
+		hAccel = newAccel;
+		hVel += hAccel;
+
+		if (fabs(hVel) < MIN_H_VEL)
+		{ // minimum velocity for full-stop reached
+			hVel = 0;
+		}
+		else if (hVel > GLOBALmax_h_vel)
+		{ // max velocity (right) reached
+			hVel = GLOBALmax_h_vel;
+		}
+		else if (hVel < -GLOBALmax_h_vel)
+		{ // max velocity (left) reached
+			hVel = -GLOBALmax_h_vel;
+		}
+
+		// move rectangle based on horizontal velocity
+		rect.move(hVel, 0);
+	}
+
+	/**
+	 * @brief Process vertical movement
+	 */
+	void vMove()
+	{
+		// always experiencing gravity
+		// note: +y axis in SFML goes down, hence gravity is positive acceleration
+		vAccel = GLOBALgravity;
+
+		if (sf::Keyboard::isKeyPressed(KEY_JUMP))
+		{ // pressed jump
+			if (canJumpNumFrames > 0)
+			{ // we can still jump even after leaving the ground
+				canJumpNumFrames = 0; // can't jump anymore after jumping
+				jumpNumFrames = V_HOLD; // just started jumping, so reset number of frames until we don't apply jump acceleration anymore
+				vVel = 0; // reset vertical velocity upon jumping
+			}
+			if (jumpNumFrames > 0)
+			{ // can still apply jump acceleration
+				vAccel = GLOBALv_accel;
+			}
+		}
+		else
+		{ // free fall
+			if (vVel < GLOBALcut_v_vel)
+			{ // maximum upward velocity reached
+				vVel = GLOBALcut_v_vel;
+			}
+		}
+		canJumpNumFrames -= 1; // in case we just left ground, decrease number of frames where we can still jump
+		jumpNumFrames -= 1; // in case we jumped, decrease number of frames where we apply jump acceleration
+		vVel += vAccel; // apply vertical acceleration to vertical velocity
+		if (vVel > GLOBALmax_v_vel)
+		{ // max falling velocity reached
+			vVel = GLOBALmax_v_vel;
+		}
+
+		// move rectangle based on vertical velocity
+		rect.move(0, vVel);
+	}
+
+	/**
+	 * @brief Process horizontal collision of this player entity with another rectangle entity
+	 * @param[in] other Reference to the other rectangle entity
+	 */
+	void hBump(RectEntity other)
+	{
+		sf::RectangleShape& otherRect = other.rect;
+		float otherX = otherRect.getPosition().x;
+		float ourX = rect.getPosition().x;
+		if (ourX > otherX)
+		{	// player moving left, hit right side of other rectangle
+			otherX += otherRect.getSize().x * 0.5f; // x-position of rightmost edge of the other rectangle
+			ourX -= rect.getSize().x * 0.5f; // x-position of leftmost edge of the player rectangle
+
+			// calculate penetration distance, and move the player away from the other rectangle 
+			// based on the penetration distance + the gap specified in the properties file
+			rect.move(otherX - ourX + GAP, 0);
+
+			hVel = 0; // force player horizontal velocity to 0 since we hit another entity
+		}
+		else if (ourX < otherX)
+		{	// player moving right, hit left side of other rectangle
+			otherX -= otherRect.getSize().x * 0.5f;	// x-position of leftmost edge of the other rectangle	
+			ourX += rect.getSize().x * 0.5f; // x-position of rightmost edge of the player rectangle
+
+			// calculate penetration distance, and move the player away from the other rectangle 
+			// based on the penetration distance + the gap specified in the properties file
+			rect.move(otherX - ourX - GAP, 0);
+
+			hVel = 0; // force player horizontal velocity to 0 since we hit another entity
+		}
+	}
+
+	/**
+	 * @brief Process vertical collision of this player entity with another rectangle entity
+	 * @param[in] other Reference to the other rectangle entity
+	 */
+	void vBump(RectEntity other)
+	{
+		sf::RectangleShape& otherRect = other.rect;
+		float otherY = otherRect.getPosition().y;
+		float ourY = rect.getPosition().y;
+		if (ourY > otherY)
+		{	// player moving up, hit bottom side of other rectangle
+			otherY += otherRect.getSize().y * 0.5f; // y-position of bottom edge of the other rectangle
+			ourY -= rect.getSize().y * 0.5f; // y-position of top edge of the player rectangle
+
+			// calculate penetration distance, and move the player away from the other rectangle 
+			// based on the penetration distance + the gap specified in the properties file
+			rect.move(0, otherY - ourY + GAP);
+
+			vVel = 0; // force player vertical velocity to 0 since we hit another entity
+		}
+		else if (ourY < otherY)
+		{	// player moving down, hit top side of other rectangle
+			otherY -= (otherRect.getSize()).y * 0.5f; // y-position of top edge of the other rectangle
+			ourY += (rect.getSize()).y * 0.5f; // y-position of bottom edge of the player rectangle
+
+			// calculate penetration distance, and move the player away from the other rectangle 
+			// based on the penetration distance + the gap specified in the properties file
+			rect.move(0, otherY - ourY - GAP);
+
+			vVel = 0; // force player vertical velocity to 0 since we hit another entity
+			canJumpNumFrames = V_SAFE; // player is grounded, so reset number of frames until player can't jump anymore
+			jumpNumFrames = V_HOLD; // player is grounded, so reset number of frames until we don't apply jump acceleration anymore
+		}
+	}
+};
 
 int main()
 {
 
+	sf::RenderWindow window(sf::VideoMode(SCREEN_W, SCREEN_H), "Platfomer Basics");
+	window.setFramerateLimit(FPS);
 	string filename("properties.txt");
 	float number;
 
@@ -85,20 +356,29 @@ int main()
 	for (int i = 0; i < propertyList.size(); i++) {
 		cout << propertyList[i] << endl;
 	}
-	float H_ACCEL = propertyList[0];
-	float H_COEFF = propertyList[1];
-	float H_OPPOSITE = propertyList[2];
-	float H_AIR = propertyList[3];
-	float MIN_H_VEL = propertyList[4];;
-	float MAX_H_VEL = propertyList[5];
-	float GRAVITY = propertyList[6];
-	float V_ACCEL = propertyList[7];
-	float V_HOLD = propertyList[8];
-	
-	float V_SAFE = propertyList[9];
-	float CUT_V_VEL = propertyList[10];
-	float MAX_V_VEL = propertyList[11];
-	float GAP = propertyList[12];
+
+	H_ACCEL = propertyList[0];
+	H_COEFF = propertyList[1];
+	H_OPPOSITE = propertyList[2];
+	H_AIR = propertyList[3];
+	MIN_H_VEL = propertyList[4];;
+	MAX_H_VEL = propertyList[5];
+	GRAVITY = propertyList[6];
+	V_ACCEL = propertyList[7];
+	V_HOLD = propertyList[8];
+	V_SAFE = propertyList[9];
+	CUT_V_VEL = propertyList[10];
+	MAX_V_VEL = propertyList[11];
+	GAP = propertyList[12];
+
+	// pre-calculate values of properties affected by FPS
+	GLOBALh_accel = H_ACCEL / FPS;
+	GLOBALmax_h_vel = MAX_H_VEL / FPS;
+	GLOBALgravity = GRAVITY / FPS;
+	GLOBALv_accel = V_ACCEL / FPS;
+	GLOBALcut_v_vel = CUT_V_VEL / FPS;
+	GLOBALmax_v_vel = MAX_V_VEL / FPS;
+
 	ifstream file;
 	file.open("stage.txt");
 
@@ -107,247 +387,84 @@ int main()
 	file >> playerX;
 	file >> playerY;
 	RectangleShape playerCharacter(Vector2f(24, 32));
-	playerCharacter.setOrigin(playerCharacter.getSize().x / 2, playerCharacter.getSize().y / 2);
-	playerCharacter.setFillColor(Color::Cyan);
-	playerCharacter.setPosition(playerX, playerY);
+	PlayerEntity player;
+	player.setSize(PLAYER_W, PLAYER_H);
+	player.setColor(sf::Color(0, 255, 255));
+	player.setPosition(playerX, playerY);
 
-	Vector2f playerVel(0, 0), playerAccel(0, 0);
+	int numBlocks;
+	file >> numBlocks;
+	std::vector<RectEntity> blocks;
+    blocks.resize(numBlocks);
 
-	float shapeCount;
-	file >> shapeCount;
-
-	vector<RectangleShape> walls;
-	sf::Color lGrey(211, 211, 211);
-	// Setup clock for calculating delta time
-	sf::Clock deltaTimeClock;
-	float accumulator = 0.0f;
-
-	for (int i = 0; i < shapeCount; i++) {
-		float  Wx, Wy, Wwidth, Wheight;
-		file >> Wx >> Wy >> Wwidth >> Wheight;
-		sf::RectangleShape tempShape(Vector2f(Wwidth, Wheight));
-		tempShape.setOrigin(tempShape.getSize().x / 2, tempShape.getSize().y / 2);
-		tempShape.setPosition(Wx, Wy);
-		tempShape.setFillColor(lGrey);
-		walls.push_back(tempShape);
-	}
-	RenderWindow window(sf::VideoMode(800, 800), "Platforming 1");
-	window.setFramerateLimit(60);
-	window.setKeyRepeatEnabled(false);
-	float TIMESTEP = 1.0f / 60;
-	Vector2f forceDir(0, 0);
-
-	float frameCounter = 0, jumpCounter = 0;
-
-	bool keyRight = false, keyLeft = false, keyJump = false, keyStillPressed = false, jumpRel = false;
-	bool goingRight = false, goingLeft = false, grounded = false, leftGround = false, reset = false;
-	while (window.isOpen())
+	for( int i = 0; i < blocks.size(); i++ )
 	{
-		// Obtain the delta time
-		sf::Time deltaTime = deltaTimeClock.restart();
-		// Add the delta time to our accumulator
-		accumulator += deltaTime.asSeconds();
+		int blockX, blockY, blockWidth, blockHeight;
+		file >> blockX >> blockY >> blockWidth >> blockHeight;
 
-		Event event;
-		while (window.pollEvent(event))
-		{
-			if (event.type == sf::Event::Closed)
-				window.close();
-			else if (event.type == Event::KeyPressed) {
-				if (event.key.code == Keyboard::Key::W) {
-					forceDir.y = V_ACCEL;
-					if (frameCounter < V_SAFE) {
-						keyJump = true;
-					}
-
-				}
-				if (event.key.code == Keyboard::Key::A) {
-					keyLeft = true;
-					keyStillPressed = true;
-					forceDir.x = -15;
-
-				}
-				else if (event.key.code == Keyboard::Key::D) {
-					keyRight = true;
-					keyStillPressed = true;
-					forceDir.x = 15;
-
-				}
-			}
-			else if (event.type == Event::KeyReleased) {
-				if (event.key.code == Keyboard::Key::A) {
-					keyLeft = false;
-					if (!keyRight && !keyLeft) {
-						forceDir.x = 0;
-						keyStillPressed = false;
-					}
-				}
-				else if (event.key.code == Keyboard::Key::D) {
-					keyRight = false;
-					if (!keyLeft && !keyRight) {
-						forceDir.x = 0;
-						keyStillPressed = false;
-					}
-				}
-				else if (event.key.code == Keyboard::Key::W) {
-					forceDir.y = 0;
-					keyJump = false;
-					jumpRel = true;
-				}
-			}
-		}
-
-
-		while (accumulator >= TIMESTEP) {
-			accumulator -= TIMESTEP;
-
-			Vector2f currentPosition = playerCharacter.getPosition();
-			Vector2f currentVelocity = playerVel;
-			Vector2f currentAcceleration = playerAccel;
-
-			if (keyJump) {
-				currentAcceleration.x = forceDir.x * H_ACCEL * H_AIR;
-			}
-			else {
-				currentAcceleration.x = forceDir.x * H_ACCEL;
-			}
-			if (currentVelocity.x > 0) {
-				goingRight = true;
-				goingLeft = false;
-			}
-			else if(currentVelocity.x < 0){
-				goingRight = false;
-				goingLeft = true;
-			}
-			if (goingLeft && currentAcceleration.x > 0) {
-				currentAcceleration.x = currentAcceleration.x * H_OPPOSITE;
-			}
-			else if (goingRight && currentAcceleration.x < 0) {
-				currentAcceleration.x = currentAcceleration.x * H_OPPOSITE;
-			}
-
-			Vector2f playerNextPos = currentPosition + currentVelocity * TIMESTEP;
-			for (int i = 0; i < walls.size(); i++) {
-				//collission checks
-				FloatRect area;
-				if (playerCharacter.getGlobalBounds().intersects(walls[i].getGlobalBounds(), area)) {
-					leftGround = false;
-					reset = false;
-					//vertical checks
-					if (area.width > area.height) {
-						if (area.contains(area.left, playerCharacter.getPosition().y - playerCharacter.getSize().y/2)) {
-							playerNextPos.y = playerCharacter.getPosition().y + area.height + GAP;
-							currentVelocity.y = GRAVITY;
-							frameCounter = 0;
-							jumpCounter = 0;
-						}
-						else {
-							playerNextPos.y = playerCharacter.getPosition().y - area.height - GAP;
-							if (!keyJump) {
-								if (currentVelocity.y <= 0) {
-									currentVelocity.y += GRAVITY;
-								}
-								else {
-									currentVelocity.y = 0;
-								}
-							}
-							grounded = true;
-							frameCounter = 0;
-							jumpCounter = 0;
-						}
-					}
-					else if (area.width < area.height) {
-						if (area.contains( playerCharacter.getPosition().x + playerCharacter.getSize().x/2 - .1f, area.top + 1.0f ))
-						{
-							//Right side crash
-							playerNextPos.x = playerCharacter.getPosition().x - area.width - GAP;
-							currentVelocity.x = 0;
-							currentAcceleration.x = 0;
-						}
-						else
-						{
-							//Left side crash
-							playerNextPos.x = playerCharacter.getPosition().x + area.width + GAP;
-							currentVelocity.x = 0;
-							currentAcceleration.x = 0;
-						}
-					}
-				}
-				else {
-					leftGround = true;
-				}
-			}
-			if (keyJump) {
-				if (leftGround && !reset) {
-					reset = true;
-					currentAcceleration.y = 0;
-				}
-				if (jumpCounter < V_HOLD) {
-					currentAcceleration.y += V_ACCEL * TIMESTEP;
-					currentAcceleration.y += GRAVITY * TIMESTEP;
-					if (jumpCounter == V_HOLD) {
-						keyJump = false;
-					}
-				}
-				else {
-					keyJump = false;
-					currentAcceleration.y += GRAVITY * TIMESTEP;
-						if (currentVelocity.y > CUT_V_VEL) {
-							jumpRel = false;
-							currentVelocity.y += CUT_V_VEL;
-							grounded = false;
-						}
-				}
-				jumpCounter += 1;
-
-			}
-			else {
-				if (currentAcceleration.y < GRAVITY) {
-					currentAcceleration.y += GRAVITY * TIMESTEP;
-				}
-				if (jumpRel && grounded) {
-					if (currentVelocity.y > CUT_V_VEL) {
-						jumpRel = false;
-						currentVelocity.y += CUT_V_VEL;
-						grounded = false;
-					}
-						
-				}
-			}
-			playerAccel = currentAcceleration;
-			playerVel = currentAcceleration + currentVelocity;
-			cout << currentAcceleration.y << endl;
-			if (playerVel.x > MAX_H_VEL) {
-				playerVel.x = MAX_H_VEL;
-			}
-			else if (playerVel.x < -MAX_H_VEL) {
-				playerVel.x = -MAX_H_VEL;
-			}
-			if (playerVel.y > MAX_V_VEL) {
-				playerVel.y = MAX_V_VEL;
-			}
-			if (!keyStillPressed) {
-				playerVel.x *= H_COEFF * TIMESTEP;
-				if (playerVel.x < MIN_H_VEL) {
-					playerVel.x = 0;
-				}
-
-			}
-			playerCharacter.setPosition(playerNextPos);
-			frameCounter += 1;
-
-		}
-
-		window.clear();
-		window.draw(playerCharacter);
-		for (int i = 0; i < walls.size(); i++) {
-			window.draw(walls[i]);
-		}
-		window.display();
-
-
+		blocks[i].setSize( blockWidth, blockHeight );
+		blocks[i].setColor( sf::Color( 192, 192, 192 ) );
+		blocks[i].setPosition( blockX, blockY );
 	}
+
+
 	input_file.close();
+
+    // run the program as long as the window is open
+    while( window.isOpen() )
+    {
+        // check all the window's events that were triggered since the last iteration of the loop
+        sf::Event event;
+        while( window.pollEvent(event) )
+        {
+			if( event.type == sf::Event::Closed )
+			{	// close program (ex. X button on corner clicked)
+                window.close();
+			}
+        }
+
+        // clear the window with black color
+        window.clear( sf::Color::Black );
+
+		// Check if the escape key was pressed, which closes the window
+		if( sf::Keyboard::isKeyPressed( sf::Keyboard::Escape ) )
+		{
+			window.close();
+		}
+
+		// perform horizontal movement on player
+		player.hMove();
+		// apply physics between player and blocks after horizontal movement
+		for( auto &e : blocks )
+		{
+			if( player.aabbIntersect( e ) )
+			{
+				player.hBump( e );
+			}
+		}
+		
+		// perform vertical movement on player
+		player.vMove();		
+		// apply physics between player and blocks after vertical movement
+		for( auto &e : blocks )
+		{
+			if( player.aabbIntersect( e ) )
+			{
+				player.vBump( e );
+			}
+		}
+		
+        // draw everything here
+		player.draw( window );
+		for( auto &e : blocks )
+		{
+			e.draw( window );
+		}
+		
+        // displays all the things drawn onto the screen
+		window.display();
+	}
+	
 	return EXIT_SUCCESS;
 	return 0;
 }
