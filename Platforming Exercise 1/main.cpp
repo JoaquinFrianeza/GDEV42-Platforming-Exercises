@@ -39,7 +39,7 @@
 #define KEY_RIGHT	sf::Keyboard::D
 #define KEY_JUMP	sf::Keyboard::W
 #define SCREEN_W	800
-#define SCREEN_H	600
+#define SCREEN_H	800
 #define FPS			60.0f
 #define PLAYER_W	24
 #define PLAYER_H	32
@@ -69,6 +69,7 @@ float GLOBALv_accel;
 float GLOBALcut_v_vel;
 float GLOBALmax_v_vel;
 
+sf::View camera;
 
 /**
  * Class representing any rectangular entity.
@@ -123,6 +124,9 @@ public:
 		rect.setPosition(x, y);
 	}
 
+	Vector2f getPosition() {
+		return rect.getPosition();
+	}
 	/**
 	 * Checks whether this rectangle entity intersects with another rectangle entity
 	 * @param[in] other Other rectnagle entity to check collision with
@@ -168,13 +172,14 @@ public:
 	 */
 	void hMove()
 	{
-		
+
 		bool hIdle = true; // flag indicating whether there is input (FALSE) or not (TRUE)
 		float newAccel = 0; // new acceleration value
 
 		if (sf::Keyboard::isKeyPressed(KEY_LEFT))
 		{
-
+			cout<< "Center:"<< camera.getCenter().x<<","<< camera.getCenter().y<<endl;
+			
 			hIdle = false; // there is input, so we're not idle
 
 			newAccel = -GLOBALh_accel;
@@ -186,7 +191,7 @@ public:
 		if (sf::Keyboard::isKeyPressed(KEY_RIGHT))
 		{
 			hIdle = false; // there is input, so we're not idle
-
+			cout << "Center:" << camera.getCenter().x << "," << camera.getCenter().y<<endl;
 			newAccel = GLOBALh_accel;
 			if (hVel < 0)
 			{ // input is opposite direction of current velocity
@@ -236,6 +241,7 @@ public:
 
 		if (sf::Keyboard::isKeyPressed(KEY_JUMP))
 		{ // pressed jump
+			cout << "Center:" << camera.getCenter().x << "," << camera.getCenter().y<<endl;
 			if (canJumpNumFrames > 0)
 			{ // we can still jump even after leaving the ground
 				canJumpNumFrames = 0; // can't jump anymore after jumping
@@ -337,8 +343,17 @@ public:
 
 int main()
 {
-
+	
+	RectEntity line;
+	RectEntity line2; 
+	line.setColor(Color::White);;
+	line.setSize(3, 30);
+	line2.setColor(Color::White);
+	line2.setSize(30, 3);
 	sf::RenderWindow window(sf::VideoMode(SCREEN_W, SCREEN_H), "Platfomer Basics");
+	
+	camera.setSize(800, 800);
+
 	window.setFramerateLimit(FPS);
 	string filename("properties.txt");
 	float number;
@@ -370,6 +385,10 @@ int main()
 	CUT_V_VEL = propertyList[10];
 	MAX_V_VEL = propertyList[11];
 	GAP = propertyList[12];
+	float upperX= propertyList[13];
+	float upperY = propertyList[14];
+	float lowerX = propertyList[15];
+	float lowerY = propertyList[16];
 
 	// pre-calculate values of properties affected by FPS
 	GLOBALh_accel = H_ACCEL / FPS;
@@ -389,45 +408,51 @@ int main()
 	RectangleShape playerCharacter(Vector2f(24, 32));
 	PlayerEntity player;
 	player.setSize(PLAYER_W, PLAYER_H);
-	player.setColor(sf::Color(0, 255, 255));
+	player.setColor(Color::Blue);
 	player.setPosition(playerX, playerY);
 
 	int numBlocks;
 	file >> numBlocks;
 	std::vector<RectEntity> blocks;
-    blocks.resize(numBlocks);
+	blocks.resize(numBlocks);
 
-	for( int i = 0; i < blocks.size(); i++ )
+	for (int i = 0; i < blocks.size(); i++)
 	{
 		int blockX, blockY, blockWidth, blockHeight;
 		file >> blockX >> blockY >> blockWidth >> blockHeight;
 
-		blocks[i].setSize( blockWidth, blockHeight );
-		blocks[i].setColor( sf::Color( 192, 192, 192 ) );
-		blocks[i].setPosition( blockX, blockY );
+		blocks[i].setSize(blockWidth, blockHeight);
+		blocks[i].setColor(sf::Color(192, 192, 192));
+		blocks[i].setPosition(blockX, blockY);
 	}
 
-
+	
 	input_file.close();
+	// run the program as long as the window is open
+	while (window.isOpen())
+	{
+		
+			camera.setCenter(player.getPosition());
+		
+		
 
-    // run the program as long as the window is open
-    while( window.isOpen() )
-    {
-        // check all the window's events that were triggered since the last iteration of the loop
-        sf::Event event;
-        while( window.pollEvent(event) )
-        {
-			if( event.type == sf::Event::Closed )
+		line.setPosition(camera.getCenter().x,camera.getCenter().y);
+		line2.setPosition(camera.getCenter().x, camera.getCenter().y);
+		// check all the window's events that were triggered since the last iteration of the loop
+		sf::Event event;
+		while (window.pollEvent(event))
+		{
+			if (event.type == sf::Event::Closed)
 			{	// close program (ex. X button on corner clicked)
-                window.close();
+				window.close();
 			}
-        }
-
-        // clear the window with black color
-        window.clear( sf::Color::Black );
+		}
+	
+		// clear the window with black color
+		window.clear(sf::Color::Black);
 
 		// Check if the escape key was pressed, which closes the window
-		if( sf::Keyboard::isKeyPressed( sf::Keyboard::Escape ) )
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
 		{
 			window.close();
 		}
@@ -435,36 +460,41 @@ int main()
 		// perform horizontal movement on player
 		player.hMove();
 		// apply physics between player and blocks after horizontal movement
-		for( auto &e : blocks )
+		for (auto& e : blocks)
 		{
-			if( player.aabbIntersect( e ) )
+			if (player.aabbIntersect(e))
 			{
-				player.hBump( e );
+				player.hBump(e);
 			}
 		}
 		
 		// perform vertical movement on player
-		player.vMove();		
+		player.vMove();
 		// apply physics between player and blocks after vertical movement
-		for( auto &e : blocks )
+		for (auto& e : blocks)
 		{
-			if( player.aabbIntersect( e ) )
+			if (player.aabbIntersect(e))
 			{
-				player.vBump( e );
+				player.vBump(e);
 			}
 		}
-		
-        // draw everything here
-		player.draw( window );
-		for( auto &e : blocks )
+
+		window.setView(camera);
+		// draw everything here
+		player.draw(window);
+		player.draw(window);
+		for (auto& e : blocks)
 		{
-			e.draw( window );
+			e.draw(window);
 		}
+		line.draw(window);
+		line2.draw(window);
 		
-        // displays all the things drawn onto the screen
+		
+		// displays all the things drawn onto the screen
 		window.display();
 	}
-	
+
 	return EXIT_SUCCESS;
 	return 0;
 }
