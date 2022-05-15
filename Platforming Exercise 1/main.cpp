@@ -450,21 +450,22 @@ int main()
 	// run the program as long as the window is open
 	while (window.isOpen())
 	{
-		if(player.getPosition().x - halfW < upperX){
-			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		cout << player.getPosition().x << "," << player.getPosition().y << endl;
+		if(player.getPosition().x <= upperX){
+			camera.setCenter(upperX, camera.getCenter().y);
 		}
-		else if (player.getPosition().x + halfW > lowerX) {
-			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		else if (player.getPosition().x >= lowerX) {
+			camera.setCenter(lowerX, camera.getCenter().y);
 		}
 		else {
 			camera.setCenter(player.getPosition().x, camera.getCenter().y);
 		}
-		if (player.getPosition().y - halfH < upperY) {
-			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		if (player.getPosition().y <= upperY) {
+			camera.setCenter(camera.getCenter().x, upperY);
 		}
-		else if (player.getPosition().y + halfH > lowerY) {
+		else if (player.getPosition().y >= lowerY) {
 
-			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+			camera.setCenter(camera.getCenter().x, lowerY);
 		}
 		else {
 			camera.setCenter(camera.getCenter().x ,player.getPosition().y);
