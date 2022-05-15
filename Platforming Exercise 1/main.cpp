@@ -416,6 +416,8 @@ int main()
 	std::vector<RectEntity> blocks;
 	blocks.resize(numBlocks);
 
+	int minX = playerX, maxX = playerX, minY = playerY, maxY = playerY, maxSizeX = 0, maxSizeY = 0;
+	int halfW = SCREEN_W / 2, halfH = SCREEN_H / 2;
 	for (int i = 0; i < blocks.size(); i++)
 	{
 		int blockX, blockY, blockWidth, blockHeight;
@@ -424,17 +426,49 @@ int main()
 		blocks[i].setSize(blockWidth, blockHeight);
 		blocks[i].setColor(sf::Color(192, 192, 192));
 		blocks[i].setPosition(blockX, blockY);
+		if (blockX < minX) {
+			minX = blockX;
+		}
+		else if (blockX > maxX) {
+			maxX = blockX;
+			maxSizeX = blockWidth;
+		}
+		if (blockY < minY) {
+			minY = blockY;
+		}
+		else if (blockY > maxY) {
+			maxY = blockY;
+			maxSizeY = blockHeight;
+		}
+
 	}
 
 	
 	input_file.close();
+	camera.setCenter(player.getPosition());
+
 	// run the program as long as the window is open
 	while (window.isOpen())
 	{
-		
-			camera.setCenter(player.getPosition());
-		
-		
+		if(player.getPosition().x - halfW < upperX){
+			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		}
+		else if (player.getPosition().x + halfW > lowerX) {
+			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		}
+		else {
+			camera.setCenter(player.getPosition().x, camera.getCenter().y);
+		}
+		if (player.getPosition().y - halfH < upperY) {
+			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		}
+		else if (player.getPosition().y + halfH > lowerY) {
+
+			camera.setCenter(camera.getCenter().x, camera.getCenter().y);
+		}
+		else {
+			camera.setCenter(camera.getCenter().x ,player.getPosition().y);
+		}
 
 		line.setPosition(camera.getCenter().x,camera.getCenter().y);
 		line2.setPosition(camera.getCenter().x, camera.getCenter().y);
